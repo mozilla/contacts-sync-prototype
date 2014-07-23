@@ -3,7 +3,8 @@
 /* exported BackupService */
 /* global navigator, FxAccountsClient */
 
-(function(exports) {
+function(exports) {
+require('system/js/fxa_client.js');
 
 'use strict';
 
@@ -260,5 +261,4 @@ var BackupService = {
 BackupService.init();
 
 exports.BackupService = BackupService;
-
-}(window));
+}(window);

@@ -11,7 +11,8 @@
     "contacts":{ "access": "readwrite" },
     "settings":{ "access": "readwrite" },
     "storage":{},
-    "systemXHR":{}
+    "systemXHR":{},
+    "firefox-accounts":{}
   },
   "locales": {
     "en-US": {

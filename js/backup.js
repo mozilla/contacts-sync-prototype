@@ -3,8 +3,7 @@
 /* exported BackupService */
 /* global navigator, FxAccountsClient */
 
-function(exports) {
-require('system/js/fxa_client.js');
+var BackupService = (function(exports) {
 
 'use strict';
 
@@ -24,6 +23,40 @@ var BackupService = {
         this.process();
       }
     }.bind(this);
+
+    navigator.mozId.watch({
+      wantIssuer: 'firefox-accounts',
+      onlogin: function(assertion) {
+        window.alert("logged in!");
+        console.log('Got FxA assertion: ' + assertion);
+
+        var request = new Request(provider.url + '/browserid/login');
+        request.post({assertion: assertion}).then(
+          function success(result) {
+            switch (result.status) {
+              case 200:
+              case 201:
+              case 204:
+                resolve(self.receiveProvisionedCreds(
+                    account.accountId, result.responseText, provider));
+                break;
+
+              default:
+                reject(result.statusText);
+                break;
+            }
+          });
+      },
+      onlogout: function() {
+      },
+      onready: function() {
+      },
+      onerror: function() {
+      }
+    });
+    navigator.mozId.request({
+      oncancel: function(){}
+    });
   },
 
   getCurrentProvider: function(accountId) {
@@ -85,24 +118,6 @@ var BackupService = {
           self.getCurrentProvider(account.accountId).then(function(provider) {
             FxAccountsClient.getAssertion(provider.url, {},
               function (assertion) {
-                console.log('Got FxA assertion: ' + assertion);
-
-                var request = new Request(provider.url + '/browserid/login');
-                request.post({assertion: assertion}).then(
-                  function success(result) {
-                    switch (result.status) {
-                      case 200:
-                      case 201:
-                      case 204:
-                        resolve(self.receiveProvisionedCreds(
-                            account.accountId, result.responseText, provider));
-                        break;
-
-                      default:
-                        reject(result.statusText);
-                        break;
-                    }
-                  });
               });
           });
         }
@@ -260,5 +275,5 @@ var BackupService = {
 
 BackupService.init();
 
-exports.BackupService = BackupService;
-}(window);
+return BackupService;
+})(window);

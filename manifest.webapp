@@ -1,0 +1,24 @@
+{
+  "name": "Contacts",
+  "description": "Firefox Services: Contacts",
+  "type": "certified",
+  "launch_path": "/index.html",
+  "developer": {
+    "name": "The Gaia Team",
+    "url": "https://github.com/mozilla-b2g/gaia"
+  },
+  "permissions": {
+    "contacts":{ "access": "readwrite" },
+    "settings":{ "access": "readwrite" },
+    "storage":{},
+    "systemXHR":{},
+    "firefox-accounts":{}
+  },
+  "locales": {
+    "en-US": {
+      "name": "Contacts Sync",
+      "description": "Sync Contacts with a remote CardDAV Server"
+    }
+  },
+  "default_locale": "en-US"
+}

@@ -1,7 +1,7 @@
 {
-  "name": "Contacts",
+  "name": "Contacts Sync",
   "description": "Firefox Services: Contacts",
-  "type": "certified",
+  "type": "privileged",
   "launch_path": "/index.html",
   "developer": {
     "name": "The Gaia Team",

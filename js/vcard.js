@@ -288,7 +288,7 @@ MozContactTranslator.prototype = {
     }).join(CRLF);
 
     return 'BEGIN:VCARD' + CRLF +
-           'VERSION:4.0' + CRLF +
+           'VERSION:3.0' + CRLF +
            (body ? (body + CRLF) : '') +
            'END:VCARD' + CRLF;
   },

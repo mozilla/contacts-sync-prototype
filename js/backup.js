@@ -15,6 +15,7 @@ var BackupService = {
   provisioningAttempts: 0,
   BACKUP_PROVIDERS: 'identity.services.contacts.providers',
   MAX_PROVISIONING_ATTEMPTS: 5,
+  creds: {},
 
   init: function() {
     navigator.mozContacts.oncontactchange = function(event) {
@@ -23,28 +24,37 @@ var BackupService = {
         this.process();
       }
     }.bind(this);
-  },
 
-  getCurrentProvider: function(accountId) {
-    var self = this;
-    return new Promise(function done(resolve, reject) {
-      ContactsBackupStorage.getProviderProfile(accountId).then(
-        function (providerData) {
-          if (providerData) {
-            resolve(providerData);
-            return;
-          }
-          var req = navigator.mozSettings.createLock()
-                    .get(self.BACKUP_PROVIDERS);
-          req.onsuccess = function() {
-            resolve(req.result[self.BACKUP_PROVIDERS].default);
-          };
-        },
-        function(error) {
-          dump('** aw, snap: ' + error.toString() + '\n');
-          reject(error);
-        }
-      );
+    navigator.mozId.watch({
+      wantIssuer: 'firefox-accounts',
+      onlogin: function(assertion) {
+        console.log('Got FxA assertion: ' + assertion);
+
+        var provider_url = 'http://moz.fruux.net';
+        var request = new Request(provider_url + '/browserid/login');
+        request.post({assertion: assertion, audience: 'app://'+window.location.host}).then(
+          function success(result) {
+            console.log(result.responseText);
+            switch (result.status) {
+              case 200:
+              case 201:
+              case 204:
+                this.receiveProvisionedCreds(result.responseText, provider_url);
+                this.backup();
+                break;
+
+              default:
+                console.log(result.statusText);
+                break;
+            }
+        }.bind(this));
+      }.bind(this),
+      onlogout: function() {
+      },
+      onready: function() {
+      },
+      onerror: function() {
+      }
     });
   },
 
@@ -75,81 +85,40 @@ var BackupService = {
 
   // Provision an identity from a provider
   provision: function() {
-    var self = this;
     console.log('Provisioning account...');
-
-    return new Promise(function (resolve, reject) {
-      FxAccountsClient.getAccounts(function(account) {
-        if (account && account.verified) {
-          self.getCurrentProvider(account.accountId).then(function(provider) {
-            FxAccountsClient.getAssertion(provider.url, {},
-              function (assertion) {
-                console.log('Got FxA assertion: ' + assertion);
-
-                var request = new Request(provider.url + '/browserid/login');
-                request.post({assertion: assertion}).then(
-                  function success(result) {
-                    switch (result.status) {
-                      case 200:
-                      case 201:
-                      case 204:
-                        resolve(self.receiveProvisionedCreds(
-                            account.accountId, result.responseText, provider));
-                        break;
-
-                      default:
-                        reject(result.statusText);
-                        break;
-                    }
-                  });
-              });
-          });
-        }
-      });
+    navigator.mozId.request({
+      oncancel: function(){}
     });
   },
 
   // return promise
-  receiveProvisionedCreds: function (fxaId, responseText, provider) {
-    return new Promise(function done(resolve, reject) {
+  receiveProvisionedCreds: function (responseText, provider_url) {
       var response;
       try {
         response = JSON.parse(responseText);
       } catch(error) {
         console.log('could not parse: ' + responseText);
         console.error('provisioned creds: ' + error.toString());
-        return reject(error);
+        return;
       }
 
       if (!response.links || !response.basicAuth) {
-        return reject(new Error(
-            'Response did not include links and basicAuth creds'));
+        console.log('Response did not include links and basicAuth creds');
+        return;
       }
 
       // TODO: discover the addressbook URL
       // (see Discovery on http://sabre.io/dav/building-a-carddav-client/)
-      var url = provider.url + response.links['addressbook-home-set'] +
+      var url = provider_url + response.links['addressbook-home-set'] +
                 'default';
       console.log('provisioned creds: ' +
-        response.basicAuth.userName + ':' + response.basicAuth.password);
-
-      var creds = {
-        fxa_id: fxaId,
+        response.basicAuth.userName + ':' + response.basicAuth.password + ':' + url);
+      
+      this.creds = {
         url: url,
         username: response.basicAuth.userName,
         password: response.basicAuth.password
       };
-
-      // Save credentials and return them
-      console.log('save them');
-      ContactsBackupStorage.updateProviderProfile(fxaId, creds).then(
-        function() {
-          console.log('saved creds');
-          resolve(creds);
-        }
-      );
-
-    }.bind(this));
   },
 
   enqueue: function(contactID) {
@@ -167,70 +136,40 @@ var BackupService = {
     }.bind(this), delay);
   },
 
-  getCredentials: function() {
-    var self = this;
-    return new Promise(function done(resolve, reject) {
-      // TODO: skip Firefox Accounts stuff when using custom CardDAV server
-      FxAccountsClient.getAccounts(function(account) {
-        if (account && account.verified) {
-          ContactsBackupStorage.getProviderProfile(account.accountId).then(
-            function loaded(creds) {
-              console.log('Got creds: ' + JSON.stringify(creds));
-              if ((!creds.url || !creds.username || !creds.password) && creds.canProvision) {
-                return self.provision().then(resolve, reject);
-              } else {
-                console.log('No need to provision an account.');
-              }
-              return resolve(creds);
-            },
-            reject
-          );
-        } else {
-          return reject(new Error('No user with verified account signed in'));
-        }
-      });
-    });
-  },
-
   upload: function(contactId, vcard, tryingAgain) {
     var self = this;
     if (!self.enabled) {
       return;
     }
 
-    this.getCredentials().then(
-      function success(creds) {
-        if (!creds.username || !creds.password || !creds.url) {
-          console.error('no creds!');
-          return;
+    var creds = this.creds;
+    if (!creds.username || !creds.password || !creds.url) {
+      console.error('no creds!');
+      return;
+    }
+    var url = creds.url + '/' + contactId + '.vcf';
+    var request = new Request(url, creds);
+    request.put(vcard).then(
+      function onsuccess(result) {
+        console.log('contact pushed: ' + result.statusText);
+        if (result.status !== 201 || result.status !== 204) {
+          // on 401, provision and try again
+          console.log('got a ' + result.status + ' - will retry');
+          // TODO: put a limit of 5 attempts on pushing a single contact
+          //self.upload(contactId, vcard, true);
+          //
+          // TODO 401: reprovision and try again
         }
-        var url = creds.url + '/' + contactId + '.vcf';
-        var request = new Request(url, creds);
-        request.put(vcard).then(
-          function onsuccess(result) {
-            console.log('contact pushed: ' + result.statusText);
-            if (result.status !== 204) {
-              // on 401, provision and try again
-              console.log('got a ' + result.status + ' - will retry');
-              // TODO: put a limit of 5 attempts on pushing a single contact
-              //self.upload(contactId, vcard, true);
-              //
-              // TODO 401: reprovision and try again
-            }
-          }, 
-          function onerror(error) {
-            console.error('get creds failed: ' + error.toString());
-          }
-        );
-
-      },
-      function rejected(error) {
-        console.error('** awwww ... ' + error.toString());
+      }, 
+      function onerror(error) {
+        console.error('get creds failed: ' + error.toString());
       }
     );
   },
 
   backup: function() {
+    if(!this.creds.username)
+      return;
     var contactID = this.queue.shift();
 
     var self = this;
@@ -258,6 +197,7 @@ var BackupService = {
 };
 
 BackupService.init();
+exports.BackupService = BackupService;
 
 return BackupService;
 })(window);

@@ -167,6 +167,40 @@ var BackupService = {
     );
   },
 
+  download: function() {
+    var card_req = "<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+      "<d:prop><d:gettag /><card:address-data /></d:prop></card:addressbook-query>";
+    var request = new Request(this.creds.url, this.creds);
+    request.setHeader('content-type', 'application/xml');
+    request.setHeader('Depth', '1');
+    request.report(card_req).then(function(result) {
+      var parser = new DOMParser();
+      var xmlDoc = parser.parseFromString(result.responseText, "text/xml");
+
+      xmlDoc.getElementsByTagName("card:address-data").forEach(function(data) {
+        var rawCard = data.childNodes[0].nodeValue;
+
+        VCF.parse(rawCard, function(vcard) {
+          console.log("FormattedName:", vcard.fn);
+          var info = {
+            name: vcard.fn,
+            tel: vcard.tel
+          };
+
+          var contact = new mozContact(info);
+
+          if ("init" in contact) {
+            contact.init(info);
+          }
+
+          navigator.mozContacts.save(contact);
+        });
+      });
+    }, function(error) {
+      console.log(error);
+    });
+  },
+
   backup: function() {
     if(!this.creds.username)
       return;

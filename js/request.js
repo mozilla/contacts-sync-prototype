@@ -34,6 +34,10 @@ XhrRequest.prototype = {
     return this.dispatch('GET', null, onProgress);
   },
 
+  report: function(data, onProgress) {
+    return this.dispatch('REPORT', data, onProgress);
+  },
+
   put: function(data, onProgress) {
     return this.dispatch('PUT', data, onProgress);
   },
